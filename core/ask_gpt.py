@@ -85,8 +85,32 @@ def ask_gpt(prompt, response_json=True, valid_def=None, log_title='default'):
                     response_data = response.choices[0].message.content
                     print(f"❎ json_repair parsing failed. Retrying: '''{response_data}'''")
                     save_log(MODEL, prompt, response_data, log_title="error", message=f"json_repair parsing failed.")
+                    
+                    # 新增：请求 AI 重新解析有问题的 JSON
+                    repair_prompt = f"""
+下面的JSON中有1-2个对象存在问题导致无法解析。请帮助重新解析并输出正确的JSON。
+要求如下:
+1. 所有的key必须是英文
+2. 不要使用双引号包裹key和value
+3. 保持原有的缩进结构
+4. 只修复有问题的部分,保留其他正确的内容
+
+原始JSON:
+{response_data}
+
+请直接输出修复后的JSON,无需其他解释。
+"""
+                    repaired_response = ask_gpt(repair_prompt, response_json=True, log_title="json_repair")
+                    
+                    try:
+                        response_data = json.loads(repaired_response)
+                        print("✅ JSON successfully repaired by AI.")
+                        break
+                    except json.JSONDecodeError:
+                        print("❎ AI repair failed. Continuing with original error.")
+                    
                     if attempt == max_retries - 1:
-                        raise Exception(f"JSON parsing still failed after {max_retries} attempts: {e}")
+                        raise Exception(f"JSON parsing still failed after {max_retries} attempts and AI repair: {e}")
             else:
                 response_data = response.choices[0].message.content
                 break  # Non-JSON format, break the loop directly

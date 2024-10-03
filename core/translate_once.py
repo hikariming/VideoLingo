@@ -6,6 +6,7 @@ from rich.panel import Panel
 from rich.console import Console
 from rich.table import Table
 import re
+import string
 
 console = Console()
 
@@ -20,13 +21,16 @@ def valid_translate_result(result: dict, required_keys: list, required_sub_keys:
             return {"status": "error", "message": f"Missing required sub-key(s) in item {key}: {', '.join(set(required_sub_keys) - set(result[key].keys()))}"}
     
     # Check if all sub-keys values are not empty
-    def remove_punctuation(text):
-        return re.sub(r'[^\w\s]', '', text).strip()
+    def is_valid_content(text):
+        # 移除空白字符
+        cleaned_text = text.strip()
+        # 检查是否为空或只包含标点符号
+        return bool(cleaned_text) and not all(char in string.punctuation for char in cleaned_text)
+
     for key in result:
         for sub_key in required_sub_keys:
-            translate_result = remove_punctuation(result[key][sub_key]).strip()
-            if not translate_result:
-                return {"status": "error", "message": f"Empty value for sub-key '{sub_key}' in item {key}"}
+            if not is_valid_content(result[key][sub_key]):
+                return {"status": "error", "message": f"Invalid content for sub-key '{sub_key}' in item {key}"}
     
     return {"status": "success", "message": "Translation completed"}
 
@@ -40,15 +44,21 @@ def translate_lines(lines, previous_content_prompt, after_cotent_prompt, things_
         def valid_express(response_data):
             return valid_translate_result(response_data, ['1'], ['Free Translation'])
         for retry in range(3):
-            if step_name == 'faithfulness':
-                result = ask_gpt(prompt, response_json=True, valid_def=valid_faith, log_title=f'translate_{step_name}')
-            elif step_name == 'expressiveness':
-                result = ask_gpt(prompt, response_json=True, valid_def=valid_express, log_title=f'translate_{step_name}')
-            if len(lines.split('\n')) == len(result):
-                return result
-            if retry != 2:
-                console.print(f'[yellow]⚠️ {step_name.capitalize()} translation of block {index} failed, Retry...[/yellow]')
-        raise ValueError(f'[red]❌ {step_name.capitalize()} translation of block {index} failed after 3 retries. Please check your input text.[/red]')
+            try:
+                if step_name == 'faithfulness':
+                    result = ask_gpt(prompt, response_json=True, valid_def=valid_faith, log_title=f'translate_{step_name}')
+                elif step_name == 'expressiveness':
+                    result = ask_gpt(prompt, response_json=True, valid_def=valid_express, log_title=f'translate_{step_name}')
+                if isinstance(result, dict) and len(lines.split('\n')) == len(result):
+                    return result
+                raise ValueError("结果格式不正确或长度不匹配")
+            except Exception as e:
+                if retry == 2:
+                    raise ValueError(f'[red]❌ {step_name.capitalize()} translation of block {index} failed after 3 retries. Error: {str(e)}[/red]')
+                console.print(f'[yellow]⚠️ {step_name.capitalize()} translation of block {index} failed, Retry... Error: {str(e)}[/yellow]')
+        
+        # 这行代码不应该被执行到,但为了完整性保留
+        raise ValueError(f'[red]❌ Unexpected error in {step_name.capitalize()} translation of block {index}[/red]')
 
     ## Step 1: Faithful to the Original Text
     prompt1 = get_prompt_faithfulness(lines, shared_prompt)

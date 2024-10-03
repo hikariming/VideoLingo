@@ -35,9 +35,9 @@ def get_sentence_timestamps(df_words, df_sentences):
     language = get_whisper_language() if WHISPER_LANGUAGE == 'auto' else WHISPER_LANGUAGE
     joiner = get_joiner(language)
 
-    for idx,sentence in df_sentences['Source'].items():
+    for idx, sentence in df_sentences['Source'].items():
         sentence = remove_punctuation(sentence.lower())
-        best_match = {'score': 0, 'start': 0, 'end': 0, 'word_count': 0}
+        best_match = {'score': 0, 'start': 0, 'end': 0, 'word_count': 0, 'phrase': ''}
         decreasing_count = 0
         current_phrase = ""
         start_index = word_index  # record the index of the word where the current sentence starts
@@ -54,7 +54,7 @@ def get_sentence_timestamps(df_words, df_sentences):
                     'start': df_words['start'][start_index],
                     'end': df_words['end'][word_index],
                     'word_count': word_index - start_index + 1,
-                    'phrase': current_phrase
+                    'phrase': current_phrase.strip()
                 }
                 decreasing_count = 0
             else:
@@ -64,20 +64,22 @@ def get_sentence_timestamps(df_words, df_sentences):
                 break
             word_index += 1
         
-        #! Originally 0.9, but for very short sentences, a single space can cause a difference of 0.8, so we lower the threshold
         if best_match['score'] >= 0.75:
             time_stamp_list.append((float(best_match['start']), float(best_match['end'])))
             word_index = start_index + best_match['word_count']  # update word_index to the start of the next sentence
         else:
-            console.print(Panel(f"[yellow]⚠️ Warning: No match found for the sentence: {sentence}[/yellow]"))
-            table = Table(title="Match Details")
-            table.add_column("Item", style="cyan")
-            table.add_column("Value", style="magenta")
-            table.add_row("🔍 Original sentence", repr(sentence))
-            table.add_row("🔗 Matched", best_match['phrase'])
-            table.add_row("📊 Similarity", f"{best_match['score']:.2f}")
+            console.print(Panel(f"[yellow]⚠️ 警告: 未找到句子的匹配项: {sentence}[/yellow]"))
+            table = Table(title="匹配详情")
+            table.add_column("项目", style="cyan")
+            table.add_column("值", style="magenta")
+            table.add_row("🔍 原始句子", repr(sentence))
+            table.add_row("🔗 匹配内容", best_match['phrase'])
+            table.add_row("📊 相似度", f"{best_match['score']:.2f}")
             console.print(table)
             console.print("➖" * 25)
+            
+            # 如果没有找到匹配，添加一个默认的时间戳
+            time_stamp_list.append((float(df_words['start'][start_index]), float(df_words['end'][start_index])))
         
         start_index = word_index  # update start_index for the next sentence
     
